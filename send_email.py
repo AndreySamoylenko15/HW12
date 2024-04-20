@@ -6,16 +6,16 @@ from pydantic import EmailStr
 import auth_services
 
 conf = ConnectionConfig(
-    MAIL_USERNAME="15samoylenko15@gmail.com",
-    MAIL_PASSWORD="pythonCourse2023",
-    MAIL_FROM=("15samoylenko15@gmail.com"),
+    MAIL_USERNAME='',
+    MAIL_PASSWORD='',
+    MAIL_FROM='',
     MAIL_PORT=465,
-    MAIL_SERVER="smtp.meta.ua",
+    MAIL_SERVER='smtp.meta.ua',
     MAIL_FROM_NAME="TODO Systems",
     MAIL_STARTTLS=False,
     MAIL_SSL_TLS=True,
     USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
+    VALIDATE_CERTS=True ,
     TEMPLATE_FOLDER=Path(__file__).parent / 'templates',
 )
 

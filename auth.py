@@ -15,7 +15,7 @@ get_refresh_token = HTTPBearer()
 
 
 @router.post("/signup/", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
-def signup(body: schemas.UserSchema, bt: BackgroundTasks, db: Session = Depends(get_db)):
+def signup(body: schemas.UserSchema, bt: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
     if users.get_user_by_email(body.email, db):
         print(1)
         raise HTTPException(
