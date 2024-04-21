@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import functools
+import re
 import sys
 import typing
 from contextlib import contextmanager
+
+from starlette.types import Scope
 
 if sys.version_info >= (3, 10):  # pragma: no cover
     from typing import TypeGuard
@@ -71,7 +76,7 @@ class AwaitableOrContextManagerWrapper(typing.Generic[SupportsAsyncCloseType]):
         self.entered = await self.aw
         return self.entered
 
-    async def __aexit__(self, *args: typing.Any) -> typing.Union[None, bool]:
+    async def __aexit__(self, *args: typing.Any) -> None | bool:
         await self.entered.close()
         return None
 
@@ -86,3 +91,9 @@ def collapse_excgroups() -> typing.Generator[None, None, None]:
                 exc = exc.exceptions[0]  # pragma: no cover
 
         raise exc
+
+
+def get_route_path(scope: Scope) -> str:
+    root_path = scope.get("root_path", "")
+    route_path = re.sub(r"^" + root_path, "", scope["path"])
+    return route_path

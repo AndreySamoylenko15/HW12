@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import http.cookies
 import json
 import os
 import stat
 import typing
+import warnings
 from datetime import datetime
 from email.utils import format_datetime, formatdate
 from functools import partial
@@ -10,6 +13,7 @@ from mimetypes import guess_type
 from urllib.parse import quote
 
 import anyio
+import anyio.to_thread
 
 from starlette._compat import md5_hexdigest
 from starlette.background import BackgroundTask
@@ -26,9 +30,9 @@ class Response:
         self,
         content: typing.Any = None,
         status_code: int = 200,
-        headers: typing.Optional[typing.Mapping[str, str]] = None,
-        media_type: typing.Optional[str] = None,
-        background: typing.Optional[BackgroundTask] = None,
+        headers: typing.Mapping[str, str] | None = None,
+        media_type: str | None = None,
+        background: BackgroundTask | None = None,
     ) -> None:
         self.status_code = status_code
         if media_type is not None:
@@ -44,11 +48,9 @@ class Response:
             return content
         return content.encode(self.charset)  # type: ignore
 
-    def init_headers(
-        self, headers: typing.Optional[typing.Mapping[str, str]] = None
-    ) -> None:
+    def init_headers(self, headers: typing.Mapping[str, str] | None = None) -> None:
         if headers is None:
-            raw_headers: typing.List[typing.Tuple[bytes, bytes]] = []
+            raw_headers: list[tuple[bytes, bytes]] = []
             populate_content_length = True
             populate_content_type = True
         else:
@@ -71,7 +73,10 @@ class Response:
 
         content_type = self.media_type
         if content_type is not None and populate_content_type:
-            if content_type.startswith("text/"):
+            if (
+                content_type.startswith("text/")
+                and "charset=" not in content_type.lower()
+            ):
                 content_type += "; charset=" + self.charset
             raw_headers.append((b"content-type", content_type.encode("latin-1")))
 
@@ -87,15 +92,15 @@ class Response:
         self,
         key: str,
         value: str = "",
-        max_age: typing.Optional[int] = None,
-        expires: typing.Optional[typing.Union[datetime, str, int]] = None,
+        max_age: int | None = None,
+        expires: datetime | str | int | None = None,
         path: str = "/",
-        domain: typing.Optional[str] = None,
+        domain: str | None = None,
         secure: bool = False,
         httponly: bool = False,
-        samesite: typing.Optional[typing.Literal["lax", "strict", "none"]] = "lax",
+        samesite: typing.Literal["lax", "strict", "none"] | None = "lax",
     ) -> None:
-        cookie: "http.cookies.BaseCookie[str]" = http.cookies.SimpleCookie()
+        cookie: http.cookies.BaseCookie[str] = http.cookies.SimpleCookie()
         cookie[key] = value
         if max_age is not None:
             cookie[key]["max-age"] = max_age
@@ -126,10 +131,10 @@ class Response:
         self,
         key: str,
         path: str = "/",
-        domain: typing.Optional[str] = None,
+        domain: str | None = None,
         secure: bool = False,
         httponly: bool = False,
-        samesite: typing.Optional[typing.Literal["lax", "strict", "none"]] = "lax",
+        samesite: typing.Literal["lax", "strict", "none"] | None = "lax",
     ) -> None:
         self.set_cookie(
             key,
@@ -143,14 +148,15 @@ class Response:
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        prefix = "websocket." if scope["type"] == "websocket" else ""
         await send(
             {
-                "type": "http.response.start",
+                "type": prefix + "http.response.start",
                 "status": self.status_code,
                 "headers": self.raw_headers,
             }
         )
-        await send({"type": "http.response.body", "body": self.body})
+        await send({"type": prefix + "http.response.body", "body": self.body})
 
         if self.background is not None:
             await self.background()
@@ -171,9 +177,9 @@ class JSONResponse(Response):
         self,
         content: typing.Any,
         status_code: int = 200,
-        headers: typing.Optional[typing.Mapping[str, str]] = None,
-        media_type: typing.Optional[str] = None,
-        background: typing.Optional[BackgroundTask] = None,
+        headers: typing.Mapping[str, str] | None = None,
+        media_type: str | None = None,
+        background: BackgroundTask | None = None,
     ) -> None:
         super().__init__(content, status_code, headers, media_type, background)
 
@@ -190,10 +196,10 @@ class JSONResponse(Response):
 class RedirectResponse(Response):
     def __init__(
         self,
-        url: typing.Union[str, URL],
+        url: str | URL,
         status_code: int = 307,
-        headers: typing.Optional[typing.Mapping[str, str]] = None,
-        background: typing.Optional[BackgroundTask] = None,
+        headers: typing.Mapping[str, str] | None = None,
+        background: BackgroundTask | None = None,
     ) -> None:
         super().__init__(
             content=b"", status_code=status_code, headers=headers, background=background
@@ -202,7 +208,7 @@ class RedirectResponse(Response):
 
 
 Content = typing.Union[str, bytes]
-SyncContentStream = typing.Iterator[Content]
+SyncContentStream = typing.Iterable[Content]
 AsyncContentStream = typing.AsyncIterable[Content]
 ContentStream = typing.Union[AsyncContentStream, SyncContentStream]
 
@@ -214,9 +220,9 @@ class StreamingResponse(Response):
         self,
         content: ContentStream,
         status_code: int = 200,
-        headers: typing.Optional[typing.Mapping[str, str]] = None,
-        media_type: typing.Optional[str] = None,
-        background: typing.Optional[BackgroundTask] = None,
+        headers: typing.Mapping[str, str] | None = None,
+        media_type: str | None = None,
+        background: BackgroundTask | None = None,
     ) -> None:
         if isinstance(content, typing.AsyncIterable):
             self.body_iterator = content
@@ -251,7 +257,7 @@ class StreamingResponse(Response):
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         async with anyio.create_task_group() as task_group:
 
-            async def wrap(func: "typing.Callable[[], typing.Awaitable[None]]") -> None:
+            async def wrap(func: typing.Callable[[], typing.Awaitable[None]]) -> None:
                 await func()
                 task_group.cancel_scope.cancel()
 
@@ -267,20 +273,24 @@ class FileResponse(Response):
 
     def __init__(
         self,
-        path: typing.Union[str, "os.PathLike[str]"],
+        path: str | os.PathLike[str],
         status_code: int = 200,
-        headers: typing.Optional[typing.Mapping[str, str]] = None,
-        media_type: typing.Optional[str] = None,
-        background: typing.Optional[BackgroundTask] = None,
-        filename: typing.Optional[str] = None,
-        stat_result: typing.Optional[os.stat_result] = None,
-        method: typing.Optional[str] = None,
+        headers: typing.Mapping[str, str] | None = None,
+        media_type: str | None = None,
+        background: BackgroundTask | None = None,
+        filename: str | None = None,
+        stat_result: os.stat_result | None = None,
+        method: str | None = None,
         content_disposition_type: str = "attachment",
     ) -> None:
         self.path = path
         self.status_code = status_code
         self.filename = filename
-        self.send_header_only = method is not None and method.upper() == "HEAD"
+        if method is not None:
+            warnings.warn(
+                "The 'method' parameter is not used, and it will be removed.",
+                DeprecationWarning,
+            )
         if media_type is None:
             media_type = guess_type(filename or path)[0] or "text/plain"
         self.media_type = media_type
@@ -305,7 +315,7 @@ class FileResponse(Response):
         content_length = str(stat_result.st_size)
         last_modified = formatdate(stat_result.st_mtime, usegmt=True)
         etag_base = str(stat_result.st_mtime) + "-" + str(stat_result.st_size)
-        etag = md5_hexdigest(etag_base.encode(), usedforsecurity=False)
+        etag = f'"{md5_hexdigest(etag_base.encode(), usedforsecurity=False)}"'
 
         self.headers.setdefault("content-length", content_length)
         self.headers.setdefault("last-modified", last_modified)
@@ -329,8 +339,10 @@ class FileResponse(Response):
                 "headers": self.raw_headers,
             }
         )
-        if self.send_header_only:
+        if scope["method"].upper() == "HEAD":
             await send({"type": "http.response.body", "body": b"", "more_body": False})
+        elif "extensions" in scope and "http.response.pathsend" in scope["extensions"]:
+            await send({"type": "http.response.pathsend", "path": str(self.path)})
         else:
             async with await anyio.open_file(self.path, mode="rb") as file:
                 more_body = True

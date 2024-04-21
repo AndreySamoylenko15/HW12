@@ -7,6 +7,7 @@ import enum
 
 class Contact(Base):
     __tablename__ = "contacts"
+    __table_args__ = {'extend_existing': True} #
     id = Column(Integer, primary_key=True, index=True)
     first_name = Column(String, index=True)
     last_name = Column(String, index=True)

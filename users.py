@@ -39,3 +39,10 @@ def confirmed_email(email: str, db: Session) -> None:
     user = get_user_by_email(email, db)
     user.confirmed = True
     db.commit()
+
+def update_avatar_url(email: str, url: str | None, db: Session) -> User:
+    user = get_user_by_email(email, db)
+    user.avatar = url
+    db.commit()
+    db.refresh(user)
+    return user

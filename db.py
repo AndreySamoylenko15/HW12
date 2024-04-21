@@ -1,10 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from config import config
 
 
+SQLALCHEMY_DATABASE_URL='postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@${PG_DOMAIN}:${PG_PORT}/${PG_DB}'
 
-SQLALCHEMY_DATABASE_URL = 'postgresql+psycopg2://postgres:567234@localhost:5432/hw12'
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(config.DB_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

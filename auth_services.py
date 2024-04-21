@@ -1,10 +1,14 @@
+import pickle
 from datetime import datetime, timedelta
 from typing import Optional
+
+import redis
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, status
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from config import config
 
 from db import get_db
 import users as repository_users
@@ -12,8 +16,13 @@ import users as repository_users
 
 class Auth:
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    SECRET_KEY = "974790aec4ac460bdc11645decad4dce7c139b7f2982b7428ec44e886ea588c6"
-    ALGORITHM = "HS256"
+    SECRET_KEY = config.SECRET_KEY_JWT
+    ALGORITHM = config.ALGORITHM
+    cache = redis.Redis(
+        host=config.REDIS_DOMAIN,
+        port=config.REDIS_PORT,
+        db=0,
+        password=config.REDIS_PASSWORD,)
 
     @staticmethod
     def verify_password (plain_password, hashed_password):
@@ -79,9 +88,18 @@ class Auth:
         except JWTError as e:
             raise credentials_exception
 
-        user = repository_users.get_user_by_email(email, db)
+        user_hash = str(email)
+        user = Auth.cache.get(user_hash)
         if user is None:
-            raise credentials_exception
+            print("User from database")
+            user = repository_users.get_user_by_email(email, db)
+            if user is None:
+                raise credentials_exception
+            Auth.cache.set(user_hash, pickle.dumps(user))
+            Auth.cache.expire(user_hash, 300)
+        else:
+            print("User from cache")
+            user = pickle.loads(user)
         return user
     
     @staticmethod

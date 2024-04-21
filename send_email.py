@@ -4,18 +4,19 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from fastapi_mail.errors import ConnectionErrors
 from pydantic import EmailStr
 import auth_services
+from config import config
 
 conf = ConnectionConfig(
-    MAIL_USERNAME='',
-    MAIL_PASSWORD='',
-    MAIL_FROM='',
-    MAIL_PORT=465,
-    MAIL_SERVER='smtp.meta.ua',
-    MAIL_FROM_NAME="TODO Systems",
+    MAIL_USERNAME=config.MAIL_USERNAME,
+    MAIL_PASSWORD=config.MAIL_PASSWORD,
+    MAIL_FROM=config.MAIL_FROM,
+    MAIL_PORT=config.MAIL_PORT,
+    MAIL_SERVER=config.MAIL_SERVER,
+    MAIL_FROM_NAME="ContactsApp",
     MAIL_STARTTLS=False,
     MAIL_SSL_TLS=True,
     USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True ,
+    VALIDATE_CERTS=True,
     TEMPLATE_FOLDER=Path(__file__).parent / 'templates',
 )
 

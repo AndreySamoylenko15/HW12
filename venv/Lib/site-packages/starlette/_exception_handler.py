@@ -1,10 +1,21 @@
+from __future__ import annotations
+
 import typing
 
 from starlette._utils import is_async_callable
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.types import ASGIApp, ExceptionHandler, Message, Receive, Scope, Send
+from starlette.types import (
+    ASGIApp,
+    ExceptionHandler,
+    HTTPExceptionHandler,
+    Message,
+    Receive,
+    Scope,
+    Send,
+    WebSocketExceptionHandler,
+)
 from starlette.websockets import WebSocket
 
 ExceptionHandlers = typing.Dict[typing.Any, ExceptionHandler]
@@ -13,16 +24,14 @@ StatusHandlers = typing.Dict[int, ExceptionHandler]
 
 def _lookup_exception_handler(
     exc_handlers: ExceptionHandlers, exc: Exception
-) -> typing.Optional[ExceptionHandler]:
+) -> ExceptionHandler | None:
     for cls in type(exc).__mro__:
         if cls in exc_handlers:
             return exc_handlers[cls]
     return None
 
 
-def wrap_app_handling_exceptions(
-    app: ASGIApp, conn: typing.Union[Request, WebSocket]
-) -> ASGIApp:
+def wrap_app_handling_exceptions(app: ASGIApp, conn: Request | WebSocket) -> ASGIApp:
     exception_handlers: ExceptionHandlers
     status_handlers: StatusHandlers
     try:
@@ -59,12 +68,17 @@ def wrap_app_handling_exceptions(
                 raise RuntimeError(msg) from exc
 
             if scope["type"] == "http":
+                nonlocal conn
+                handler = typing.cast(HTTPExceptionHandler, handler)
+                conn = typing.cast(Request, conn)
                 if is_async_callable(handler):
                     response = await handler(conn, exc)
                 else:
                     response = await run_in_threadpool(handler, conn, exc)
                 await response(scope, receive, sender)
             elif scope["type"] == "websocket":
+                handler = typing.cast(WebSocketExceptionHandler, handler)
+                conn = typing.cast(WebSocket, conn)
                 if is_async_callable(handler):
                     await handler(conn, exc)
                 else:
